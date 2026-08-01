@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. ELIMINAMOS EL WILDCARD GLOBAL PELIGROSO
+    
+    // 2. PRODUCTOS: Dueño crea/edita/borra. Cajero solo lee.
+    match /products/{productId} {
+      allow read: if request.auth != null && resource.data.businessId == request.auth.token.businessId;
+      allow create: if request.auth != null 
+                    && request.auth.token.role == 'dueño' 
+                    && request.resource.data.businessId == request.auth.token.businessId;
+      allow update, delete: if request.auth != null 
+                            && request.auth.token.role == 'dueño' 
+                            && resource.data.businessId == request.auth.token.businessId;
+    }
+
+    // 3. CATEGORÍAS: Misma lógica que productos
+    match /categories/{categoryId} {
+      allow read: if request.auth != null && resource.data.businessId == request.auth.token.businessId;
+      allow create: if request.auth != null && request.auth.token.role == 'dueño' && request.resource.data.businessId == request.auth.token.businessId;
+      allow update, delete: if request.auth != null && request.auth.token.role == 'dueño' && resource.data.businessId == request.auth.token.businessId;
+    }
+
+    // 4. VENTAS: Dueño y cajero pueden leer y crear sus propias ventas
+    match /sales/{saleId} {
+      allow read: if request.auth != null && resource.data.businessId == request.auth.token.businessId;
+      allow create: if request.auth != null && request.resource.data.businessId == request.auth.token.businessId;
+      allow update: if request.auth != null && request.auth.token.role == 'dueño' && resource.data.businessId == request.auth.token.businessId;
+    }
+
+    // 5. USUARIOS: Dueño administra a sus cajeros (AHORA CON superadmin PROTEGIDO)
+    match /users/{userId} {
+      // LECTURA: El usuario lee su propio doc. El dueño lee los de su negocio, EXCEPTO al superadmin.
+      allow read: if request.auth != null && (
+        request.auth.uid == userId || 
+        (request.auth.token.role == 'dueño' && resource.data.businessId == request.auth.token.businessId && resource.data.role != 'SUPERADMIN')
+      );
+
+      // CREACIÓN: Un dueño no puede crear una nueva cuenta y asignarle el rol de superadmin
+      allow create: if request.auth != null 
+                    && request.auth.token.role == 'dueño' 
+                    && request.resource.data.businessId == request.auth.token.businessId
+                    && request.resource.data.role != 'superadmin';
+
+      // ACTUALIZACIÓN: Un dueño no puede editar a un superadmin existente, ni puede cambiar el rol de un cajero a superadmin
+      allow update: if request.auth != null 
+                    && request.auth.token.role == 'dueño' 
+                    && resource.data.businessId == request.auth.token.businessId
+                    && resource.data.role != 'superadmin' 
+                    && request.resource.data.role != 'superadmin';
+
+      // BORRADO/BLOQUEO: Un dueño no puede eliminar la cuenta de un superadmin
+      allow delete: if request.auth != null 
+                    && request.auth.token.role == 'dueño' 
+                    && resource.data.businessId == request.auth.token.businessId
+                    && resource.data.role != 'superadmin';
+    }
+
+    // 6. LICENCIAS: Solo lectura para el dueño
+    match /licenses/{businessId} {
+      allow read: if request.auth != null && request.auth.token.role == 'dueño' && businessId == request.auth.token.businessId;
+      allow write: false; 
+    }
+  }
+}
